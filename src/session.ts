@@ -1,11 +1,10 @@
 import { Context } from './context'
-import { MaybePromise } from './util'
 import { MiddlewareFn } from './middleware'
 
 export interface SessionStore<T> {
-  get: (name: string) => MaybePromise<T | undefined>
-  set: (name: string, value: T) => MaybePromise<void>
-  delete: (name: string) => MaybePromise<void>
+  get: (name: string) => T | undefined
+  set: (name: string, value: T) => void
+  delete: (name: string) => void
 }
 
 interface SessionOptions<S extends object> {
@@ -30,7 +29,6 @@ export interface SessionContext<S extends object> extends Context {
  * or pass custom `storage`.
  *
  * @example https://github.com/telegraf/telegraf/blob/develop/docs/examples/session-bot.ts
- * @deprecated https://github.com/telegraf/telegraf/issues/1372#issuecomment-782668499
  */
 export function session<S extends object>(
   options?: SessionOptions<S>
@@ -43,12 +41,19 @@ export function session<S extends object>(
       return await next()
     }
     ctx.session = await store.get(key)
+    Object.defineProperty(ctx, 'session', {
+      get() {
+        return store.get(key)
+      },
+      set(value) {
+        if (value === undefined) {
+          store.delete(key)
+        } else {
+          store.set(key, value)
+        }
+      },
+    })
     await next()
-    if (ctx.session == null) {
-      await store.delete(key)
-    } else {
-      await store.set(key, ctx.session)
-    }
   }
 }
 
@@ -61,7 +66,6 @@ async function defaultGetSessionKey(ctx: Context): Promise<string | undefined> {
   return `${fromId}:${chatId}`
 }
 
-/** @deprecated https://github.com/telegraf/telegraf/issues/1372#issuecomment-782668499 */
 export class MemorySessionStore<T> implements SessionStore<T> {
   private readonly store = new Map<string, { session: T; expires: number }>()
 
